@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -212,16 +213,15 @@ func calculateLiveStats(stats Stats) (wpm float64, cpm float64, accuracy float64
 	return wpm, cpm, accuracy
 }
 
-
 func drawText(stats Stats, showCursor bool) {
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
-	
+
 	// Get terminal size
 	width, height := termbox.Size()
 	maxWidth := width - 4 // Leave some margin
-	
+
 	// Draw header
-	header := "Type the following text:"
+	header := "Type the following text (ESC or Ctrl+C to exit):"
 	headerX := 2
 	headerY := 1
 	for i, char := range header {
@@ -230,17 +230,17 @@ func drawText(stats Stats, showCursor bool) {
 
 	// Wrap the target text
 	wrapped := wrapText(stats.targetText, maxWidth)
-	
+
 	// Calculate the visible area
 	visibleLines := height - 5 // Reserve space for header and stats
-	startY := 3               // Starting Y position for text
+	startY := 3                // Starting Y position for text
 
 	// Draw the wrapped text
 	for lineNum, line := range wrapped.lines {
 		if lineNum >= visibleLines {
 			break
 		}
-		
+
 		currentX := 2
 		for i, char := range line {
 			color := termbox.ColorWhite | termbox.AttrDim
@@ -332,6 +332,10 @@ func main() {
 	showCursor := true
 	drawText(stats, showCursor)
 
+	// Setup signal handling for Ctrl+C
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+
 	// Channel for handling keyboard events
 	eventQueue := make(chan termbox.Event)
 	go func() {
@@ -343,6 +347,10 @@ func main() {
 mainloop:
 	for {
 		select {
+		case <-sigChan:
+			// Handle Ctrl+C
+			break mainloop
+
 		case ev := <-eventQueue:
 			if ev.Type == termbox.EventError {
 				panic(ev.Err)
@@ -409,8 +417,13 @@ mainloop:
 	wpm, cpm, accuracy := calculateLiveStats(stats)
 
 	termbox.Close()
-	fmt.Printf("\nFinal Results:\n")
+	completed := float64(len(stats.typedText)) / float64(len(stats.targetText)) * 100
+	fmt.Printf("\nTyping Test Results (%.1f%% completed):\n", completed)
 	fmt.Printf("WPM: %.1f\n", wpm)
 	fmt.Printf("CPM: %.1f\n", cpm)
 	fmt.Printf("Accuracy: %.1f%%\n", accuracy)
 }
+
+// TODO: Add an option to exit the test early
+// TODO: Add an toption to restart the test
+// TODO: Add an option to set the number of words to infinite or user keeps typing until they exit
