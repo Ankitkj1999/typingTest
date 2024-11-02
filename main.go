@@ -1,19 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/nsf/termbox-go"
 )
-
-var words = []string{
-	"the", "be", "to", "of", "and", "a", "in", "that", "have", "I",
-	"it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
-	"this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
-}
 
 type Stats struct {
 	startTime    time.Time
@@ -24,53 +21,102 @@ type Stats struct {
 	targetText   string
 }
 
-func generateText() string {
+func loadWordsFromFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var words []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		word := strings.TrimSpace(scanner.Text())
+		if word != "" {
+			words = append(words, word)
+		}
+	}
+	return words, scanner.Err()
+}
+
+func combineWordLists(wordLists ...[]string) []string {
+	totalSize := 0
+	for _, list := range wordLists {
+		totalSize += len(list)
+	}
+
+	combined := make([]string, 0, totalSize)
+	for _, list := range wordLists {
+		combined = append(combined, list...)
+	}
+	return combined
+}
+
+func getWordList() ([]string, error) {
+	fmt.Println("Choose word list:")
+	fmt.Println("1: Short words")
+	fmt.Println("2: Medium words")
+	fmt.Println("3: Long words")
+	fmt.Println("4: All combined")
+
+	var choice int
+	fmt.Print("Enter your choice (1-4): ")
+	fmt.Scan(&choice)
+
+	shortWords, err := loadWordsFromFile(filepath.Join("assets", "short-english.txt"))
+	if err != nil {
+		return nil, fmt.Errorf("error loading short words: %v", err)
+	}
+
+	mediumWords, err := loadWordsFromFile(filepath.Join("assets", "medium-english.txt"))
+	if err != nil {
+		return nil, fmt.Errorf("error loading medium words: %v", err)
+	}
+
+	longWords, err := loadWordsFromFile(filepath.Join("assets", "long-english.txt"))
+	if err != nil {
+		return nil, fmt.Errorf("error loading long words: %v", err)
+	}
+
+	switch choice {
+	case 1:
+		return shortWords, nil
+	case 2:
+		return mediumWords, nil
+	case 3:
+		return longWords, nil
+	case 4:
+		return combineWordLists(shortWords, mediumWords, longWords), nil
+	default:
+		return nil, fmt.Errorf("invalid choice: %d", choice)
+	}
+}
+
+func getWordCount() (int, error) {
+	fmt.Print("Enter number of words to type (5-50): ")
+	var count int
+	fmt.Scan(&count)
+	
+	if count < 5 || count > 50 {
+		return 0, fmt.Errorf("word count must be between 5 and 50")
+	}
+	return count, nil
+}
+
+func generateText(words []string, wordCount int) string {
 	rand.Seed(time.Now().UnixNano())
 	var result []string
-	for i := 0; i < 15; i++ {
+	for i := 0; i < wordCount; i++ {
 		result = append(result, words[rand.Intn(len(words))])
 	}
 	return strings.Join(result, " ")
 }
 
-func drawText(targetText, typedText string, showCursor bool) {
-	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
-	x, y := 2, 2
-
-	// Draw header
-	header := "Type the following text:"
-	for i, char := range header {
-		termbox.SetCell(x+i, y-1, char, termbox.ColorWhite, termbox.ColorDefault)
+func calculateLiveStats(stats Stats) (wpm float64, cpm float64, accuracy float64) {
+	duration := time.Since(stats.startTime).Minutes()
+	if duration < 0.017 { // Less than 1 second (1/60 minute)
+		return 0, 0, 0
 	}
-
-	// Draw target text and typed text
-	for i, char := range targetText {
-		color := termbox.ColorWhite | termbox.AttrDim
-		bgColor := termbox.ColorDefault
-
-		if i < len(typedText) {
-			if string(typedText[i]) == string(char) {
-				color = termbox.ColorYellow
-			} else {
-				color = termbox.ColorRed
-			}
-		} else if i == len(typedText) {
-			// Current character to type
-			if showCursor {
-				color = termbox.ColorWhite
-			} else {
-				color = termbox.ColorWhite | termbox.AttrDim
-			}
-		}
-
-		termbox.SetCell(x+i, y, char, color, bgColor)
-	}
-
-	termbox.Flush()
-}
-
-func calculateStats(stats Stats) (wpm float64, cpm float64, accuracy float64) {
-	duration := stats.endTime.Sub(stats.startTime).Minutes()
 	
 	// Calculate WPM (assuming average word length of 5 characters)
 	words := float64(stats.correctChars) / 5.0
@@ -87,28 +133,92 @@ func calculateStats(stats Stats) (wpm float64, cpm float64, accuracy float64) {
 	return wpm, cpm, accuracy
 }
 
+func drawText(stats Stats, showCursor bool) {
+	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
+	x, y := 2, 2
+
+	// Draw header
+	header := "Type the following text:"
+	for i, char := range header {
+		termbox.SetCell(x+i, y-1, char, termbox.ColorWhite, termbox.ColorDefault)
+	}
+
+	// Draw target text and typed text
+	for i, char := range stats.targetText {
+		color := termbox.ColorWhite | termbox.AttrDim
+		bgColor := termbox.ColorDefault
+
+		if i < len(stats.typedText) {
+			if string(stats.typedText[i]) == string(char) {
+				color = termbox.ColorYellow
+			} else {
+				color = termbox.ColorRed
+			}
+		} else if i == len(stats.typedText) {
+			if showCursor {
+				color = termbox.ColorWhite
+				// Draw cursor line below the character
+				termbox.SetCell(x+i, y+1, '_', termbox.ColorWhite, termbox.ColorDefault)
+			} else {
+				color = termbox.ColorWhite | termbox.AttrDim
+			}
+		}
+
+		termbox.SetCell(x+i, y, char, color, bgColor)
+	}
+
+	// Calculate and draw live stats
+	wpm, cpm, accuracy := calculateLiveStats(stats)
+	statsText := fmt.Sprintf("WPM: %.1f | CPM: %.1f | Accuracy: %.1f%%", wpm, cpm, accuracy)
+	for i, char := range statsText {
+		termbox.SetCell(x+i, y+2, char, termbox.ColorCyan, termbox.ColorDefault)
+	}
+
+	termbox.Flush()
+}
+
 func main() {
-	err := termbox.Init()
+	// Get word list choice from user
+	words, err := getWordList()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get word count from user
+	wordCount, err := getWordCount()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Clear the screen before starting the game
+	fmt.Print("\033[H\033[2J")
+	fmt.Println("Starting typing test... Press any key to begin!")
+	fmt.Scanln() // Wait for user input
+
+	err = termbox.Init()
 	if err != nil {
 		panic(err)
 	}
 	defer termbox.Close()
 
 	stats := Stats{
-		targetText: generateText(),
+		targetText: generateText(words, wordCount),
 		typedText:  "",
+		startTime:  time.Now(),
 	}
 
 	// Create a ticker for cursor blinking
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	showCursor := true
-	drawText(stats.targetText, stats.typedText, showCursor)
+	// Create a ticker for stats updates
+	statsTicker := time.NewTicker(100 * time.Millisecond)
+	defer statsTicker.Stop()
 
-	stats.startTime = time.Now()
-	stats.totalChars = 0
-	stats.correctChars = 0
+	showCursor := true
+	drawText(stats, showCursor)
 
 	// Channel for handling keyboard events
 	eventQueue := make(chan termbox.Event)
@@ -164,7 +274,7 @@ mainloop:
 				}
 			}
 
-			drawText(stats.targetText, stats.typedText, showCursor)
+			drawText(stats, showCursor)
 
 			if len(stats.typedText) >= len(stats.targetText) {
 				break mainloop
@@ -172,17 +282,19 @@ mainloop:
 
 		case <-ticker.C:
 			showCursor = !showCursor
-			drawText(stats.targetText, stats.typedText, showCursor)
+			drawText(stats, showCursor)
+			
+		case <-statsTicker.C:
+			drawText(stats, showCursor)
 		}
 	}
 
 	stats.endTime = time.Now()
-	wpm, cpm, accuracy := calculateStats(stats)
+	wpm, cpm, accuracy := calculateLiveStats(stats)
 
 	termbox.Close()
-	fmt.Printf("\nTyping Test Results:\n")
-	fmt.Printf("WPM: %.2f\n", wpm)
-	fmt.Printf("CPM: %.2f\n", cpm)
-	fmt.Printf("Accuracy: %.2f%%\n", accuracy)
+	fmt.Printf("\nFinal Results:\n")
+	fmt.Printf("WPM: %.1f\n", wpm)
+	fmt.Printf("CPM: %.1f\n", cpm)
+	fmt.Printf("Accuracy: %.1f%%\n", accuracy)
 }
-//  TODO: The cursor is hindind the character, need to fix it
