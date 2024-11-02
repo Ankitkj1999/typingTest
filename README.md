@@ -57,3 +57,7 @@ if duration < 0.017 { // Less than 1 second
 - Cyan: Stats display
 
 This implementation provides a balance between accuracy and real-time feedback, giving users immediate information about their typing performance while maintaining reasonable precision in the calculations.
+
+https://github.com/first20hours/google-10000-english
+
+https://github.com/dwyl/english-words/tree/master
