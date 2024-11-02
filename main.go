@@ -157,6 +157,8 @@ func drawText(stats Stats, showCursor bool) {
 		} else if i == len(stats.typedText) {
 			if showCursor {
 				color = termbox.ColorWhite
+				// Draw cursor line below the character
+				termbox.SetCell(x+i, y+1, '_', termbox.ColorWhite, termbox.ColorDefault)
 			} else {
 				color = termbox.ColorWhite | termbox.AttrDim
 			}
@@ -174,6 +176,7 @@ func drawText(stats Stats, showCursor bool) {
 
 	termbox.Flush()
 }
+
 func main() {
 	// Get word list choice from user
 	words, err := getWordList()
