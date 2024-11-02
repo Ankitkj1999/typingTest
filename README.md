@@ -1,4 +1,6 @@
-# Typing Test Metrics Explained
+# Typing Test | Go CLI
+
+![go typing CLI](images/demo.gif)
 
 ## Words Per Minute (WPM)
 ```go
@@ -58,6 +60,18 @@ if duration < 0.017 { // Less than 1 second
 
 This implementation provides a balance between accuracy and real-time feedback, giving users immediate information about their typing performance while maintaining reasonable precision in the calculations.
 
-https://github.com/first20hours/google-10000-english
+# Typing Test Metrics Explained
 
-https://github.com/dwyl/english-words/tree/master
+## Word Lists
+
+The English words used in this CLI are sourced from the following repositories:
+
+- [Google 10000 English](https://github.com/first20hours/google-10000-english)
+- [Dwyl English Words](https://github.com/dwyl/english-words/tree/master)
+
+The word lists are divided into four files based on word length:
+
+- `short-english.txt`: Contains short English words
+- `medium-english.txt`: Contains medium-length English words
+- `long-english.txt`: Contains long English words
+- `words_list.txt`: Contains a comprehensive list of English words

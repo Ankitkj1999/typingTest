@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nsf/termbox-go"
 )
@@ -19,6 +20,84 @@ type Stats struct {
 	correctChars int
 	typedText    string
 	targetText   string
+}
+
+// Added structure to handle wrapped text display
+type WrappedText struct {
+	lines    []string
+	charPos  map[int]Position // Maps absolute position to line and column
+	totalLen int
+}
+
+type Position struct {
+	line   int
+	column int
+}
+
+func wrapText(text string, maxWidth int) WrappedText {
+	words := strings.Split(text, " ")
+	var lines []string
+	var currentLine string
+	charPos := make(map[int]Position)
+	absolutePos := 0
+
+	currentLineNum := 0
+	currentColumn := 0
+
+	for i, word := range words {
+		// Check if adding this word would exceed the width
+		var proposedLine string
+		if currentLine == "" {
+			proposedLine = word
+		} else {
+			proposedLine = currentLine + " " + word
+		}
+
+		if utf8.RuneCountInString(proposedLine) <= maxWidth {
+			// Add the space before the word (except for first word)
+			if currentLine != "" {
+				// Map position for the space
+				charPos[absolutePos] = Position{line: currentLineNum, column: currentColumn}
+				absolutePos++
+				currentColumn++
+				currentLine += " "
+			}
+
+			// Map positions for each character in the word
+			for range word {
+				charPos[absolutePos] = Position{line: currentLineNum, column: currentColumn}
+				absolutePos++
+				currentColumn++
+			}
+			currentLine = proposedLine
+		} else {
+			// Line is full, start a new line
+			if currentLine != "" {
+				lines = append(lines, currentLine)
+				currentLine = word
+				currentLineNum++
+				currentColumn = 0
+
+				// Map positions for the new word
+				for range word {
+					charPos[absolutePos] = Position{line: currentLineNum, column: currentColumn}
+					absolutePos++
+					currentColumn++
+				}
+			}
+		}
+
+		// Handle the last word
+		if i == len(words)-1 && currentLine != "" {
+			lines = append(lines, currentLine)
+		}
+	}
+
+	return WrappedText{
+		lines:    lines,
+		charPos:  charPos,
+		totalLen: absolutePos,
+	}
 }
 
 func loadWordsFromFile(filename string) ([]string, error) {
@@ -96,7 +175,7 @@ func getWordCount() (int, error) {
 	fmt.Print("Enter number of words to type (5-50): ")
 	var count int
 	fmt.Scan(&count)
-	
+
 	if count < 5 || count > 50 {
 		return 0, fmt.Errorf("word count must be between 5 and 50")
 	}
@@ -117,7 +196,7 @@ func calculateLiveStats(stats Stats) (wpm float64, cpm float64, accuracy float64
 	if duration < 0.017 { // Less than 1 second (1/60 minute)
 		return 0, 0, 0
 	}
-	
+
 	// Calculate WPM (assuming average word length of 5 characters)
 	words := float64(stats.correctChars) / 5.0
 	wpm = words / duration
@@ -133,45 +212,78 @@ func calculateLiveStats(stats Stats) (wpm float64, cpm float64, accuracy float64
 	return wpm, cpm, accuracy
 }
 
+
 func drawText(stats Stats, showCursor bool) {
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
-	x, y := 2, 2
-
+	
+	// Get terminal size
+	width, height := termbox.Size()
+	maxWidth := width - 4 // Leave some margin
+	
 	// Draw header
 	header := "Type the following text:"
+	headerX := 2
+	headerY := 1
 	for i, char := range header {
-		termbox.SetCell(x+i, y-1, char, termbox.ColorWhite, termbox.ColorDefault)
+		termbox.SetCell(headerX+i, headerY, char, termbox.ColorWhite, termbox.ColorDefault)
 	}
 
-	// Draw target text and typed text
-	for i, char := range stats.targetText {
-		color := termbox.ColorWhite | termbox.AttrDim
-		bgColor := termbox.ColorDefault
+	// Wrap the target text
+	wrapped := wrapText(stats.targetText, maxWidth)
+	
+	// Calculate the visible area
+	visibleLines := height - 5 // Reserve space for header and stats
+	startY := 3               // Starting Y position for text
 
-		if i < len(stats.typedText) {
-			if string(stats.typedText[i]) == string(char) {
-				color = termbox.ColorYellow
-			} else {
-				color = termbox.ColorRed
-			}
-		} else if i == len(stats.typedText) {
-			if showCursor {
-				color = termbox.ColorWhite
-				// Draw cursor line below the character
-				termbox.SetCell(x+i, y+1, '_', termbox.ColorWhite, termbox.ColorDefault)
-			} else {
-				color = termbox.ColorWhite | termbox.AttrDim
-			}
+	// Draw the wrapped text
+	for lineNum, line := range wrapped.lines {
+		if lineNum >= visibleLines {
+			break
 		}
+		
+		currentX := 2
+		for i, char := range line {
+			color := termbox.ColorWhite | termbox.AttrDim
+			bgColor := termbox.ColorDefault
 
-		termbox.SetCell(x+i, y, char, color, bgColor)
+			// Find the absolute position for this character
+			absPos := -1
+			for pos, coord := range wrapped.charPos {
+				if coord.line == lineNum && coord.column == i {
+					absPos = pos
+					break
+				}
+			}
+
+			if absPos != -1 {
+				if absPos < len(stats.typedText) {
+					if string(stats.typedText[absPos]) == string(char) {
+						color = termbox.ColorYellow
+					} else {
+						color = termbox.ColorRed
+					}
+				} else if absPos == len(stats.typedText) {
+					if showCursor {
+						color = termbox.ColorWhite
+					} else {
+						color = termbox.ColorWhite | termbox.AttrDim
+					}
+				}
+			}
+
+			termbox.SetCell(currentX, startY+lineNum, char, color, bgColor)
+			currentX++
+		}
 	}
 
-	// Calculate and draw live stats
+	// Draw stats at the bottom of the visible area
 	wpm, cpm, accuracy := calculateLiveStats(stats)
 	statsText := fmt.Sprintf("WPM: %.1f | CPM: %.1f | Accuracy: %.1f%%", wpm, cpm, accuracy)
+	statsY := height - 1 // Place stats at the bottom
 	for i, char := range statsText {
-		termbox.SetCell(x+i, y+2, char, termbox.ColorCyan, termbox.ColorDefault)
+		if i < width-2 { // Prevent stats from going off-screen
+			termbox.SetCell(2+i, statsY, char, termbox.ColorCyan, termbox.ColorDefault)
+		}
 	}
 
 	termbox.Flush()
@@ -235,6 +347,10 @@ mainloop:
 			if ev.Type == termbox.EventError {
 				panic(ev.Err)
 			}
+			if ev.Type == termbox.EventResize {
+				drawText(stats, showCursor)
+				continue
+			}
 			if ev.Type != termbox.EventKey {
 				continue
 			}
@@ -267,7 +383,7 @@ mainloop:
 				if charToAdd != "" && len(stats.typedText) < len(stats.targetText) {
 					stats.typedText += charToAdd
 					stats.totalChars++
-					
+
 					if string(stats.targetText[len(stats.typedText)-1]) == charToAdd {
 						stats.correctChars++
 					}
@@ -283,7 +399,7 @@ mainloop:
 		case <-ticker.C:
 			showCursor = !showCursor
 			drawText(stats, showCursor)
-			
+
 		case <-statsTicker.C:
 			drawText(stats, showCursor)
 		}
