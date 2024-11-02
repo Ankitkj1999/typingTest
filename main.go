@@ -33,44 +33,11 @@ func generateText() string {
 	return strings.Join(result, " ")
 }
 
-func drawText(targetText, typedText string, showCursor bool) {
-	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
-	x, y := 2, 2
-
-	// Draw header
-	header := "Type the following text:"
-	for i, char := range header {
-		termbox.SetCell(x+i, y-1, char, termbox.ColorWhite, termbox.ColorDefault)
+func calculateLiveStats(stats Stats) (wpm float64, cpm float64, accuracy float64) {
+	duration := time.Since(stats.startTime).Minutes()
+	if duration < 0.017 { // Less than 1 second (1/60 minute)
+		return 0, 0, 0
 	}
-
-	// Draw target text and typed text
-	for i, char := range targetText {
-		color := termbox.ColorWhite | termbox.AttrDim
-		bgColor := termbox.ColorDefault
-
-		if i < len(typedText) {
-			if string(typedText[i]) == string(char) {
-				color = termbox.ColorYellow
-			} else {
-				color = termbox.ColorRed
-			}
-		} else if i == len(typedText) {
-			// Current character to type
-			if showCursor {
-				color = termbox.ColorWhite
-			} else {
-				color = termbox.ColorWhite | termbox.AttrDim
-			}
-		}
-
-		termbox.SetCell(x+i, y, char, color, bgColor)
-	}
-
-	termbox.Flush()
-}
-
-func calculateStats(stats Stats) (wpm float64, cpm float64, accuracy float64) {
-	duration := stats.endTime.Sub(stats.startTime).Minutes()
 	
 	// Calculate WPM (assuming average word length of 5 characters)
 	words := float64(stats.correctChars) / 5.0
@@ -87,6 +54,48 @@ func calculateStats(stats Stats) (wpm float64, cpm float64, accuracy float64) {
 	return wpm, cpm, accuracy
 }
 
+func drawText(stats Stats, showCursor bool) {
+	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
+	x, y := 2, 2
+
+	// Draw header
+	header := "Type the following text:"
+	for i, char := range header {
+		termbox.SetCell(x+i, y-1, char, termbox.ColorWhite, termbox.ColorDefault)
+	}
+
+	// Draw target text and typed text
+	for i, char := range stats.targetText {
+		color := termbox.ColorWhite | termbox.AttrDim
+		bgColor := termbox.ColorDefault
+
+		if i < len(stats.typedText) {
+			if string(stats.typedText[i]) == string(char) {
+				color = termbox.ColorYellow
+			} else {
+				color = termbox.ColorRed
+			}
+		} else if i == len(stats.typedText) {
+			if showCursor {
+				color = termbox.ColorWhite
+			} else {
+				color = termbox.ColorWhite | termbox.AttrDim
+			}
+		}
+
+		termbox.SetCell(x+i, y, char, color, bgColor)
+	}
+
+	// Calculate and draw live stats
+	wpm, cpm, accuracy := calculateLiveStats(stats)
+	statsText := fmt.Sprintf("WPM: %.1f | CPM: %.1f | Accuracy: %.1f%%", wpm, cpm, accuracy)
+	for i, char := range statsText {
+		termbox.SetCell(x+i, y+2, char, termbox.ColorCyan, termbox.ColorDefault)
+	}
+
+	termbox.Flush()
+}
+
 func main() {
 	err := termbox.Init()
 	if err != nil {
@@ -97,18 +106,19 @@ func main() {
 	stats := Stats{
 		targetText: generateText(),
 		typedText:  "",
+		startTime:  time.Now(),
 	}
 
 	// Create a ticker for cursor blinking
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	showCursor := true
-	drawText(stats.targetText, stats.typedText, showCursor)
+	// Create a ticker for stats updates
+	statsTicker := time.NewTicker(100 * time.Millisecond)
+	defer statsTicker.Stop()
 
-	stats.startTime = time.Now()
-	stats.totalChars = 0
-	stats.correctChars = 0
+	showCursor := true
+	drawText(stats, showCursor)
 
 	// Channel for handling keyboard events
 	eventQueue := make(chan termbox.Event)
@@ -164,7 +174,7 @@ mainloop:
 				}
 			}
 
-			drawText(stats.targetText, stats.typedText, showCursor)
+			drawText(stats, showCursor)
 
 			if len(stats.typedText) >= len(stats.targetText) {
 				break mainloop
@@ -172,17 +182,19 @@ mainloop:
 
 		case <-ticker.C:
 			showCursor = !showCursor
-			drawText(stats.targetText, stats.typedText, showCursor)
+			drawText(stats, showCursor)
+			
+		case <-statsTicker.C:
+			drawText(stats, showCursor)
 		}
 	}
 
 	stats.endTime = time.Now()
-	wpm, cpm, accuracy := calculateStats(stats)
+	wpm, cpm, accuracy := calculateLiveStats(stats)
 
 	termbox.Close()
-	fmt.Printf("\nTyping Test Results:\n")
-	fmt.Printf("WPM: %.2f\n", wpm)
-	fmt.Printf("CPM: %.2f\n", cpm)
-	fmt.Printf("Accuracy: %.2f%%\n", accuracy)
+	fmt.Printf("\nFinal Results:\n")
+	fmt.Printf("WPM: %.1f\n", wpm)
+	fmt.Printf("CPM: %.1f\n", cpm)
+	fmt.Printf("Accuracy: %.1f%%\n", accuracy)
 }
-//  TODO: The cursor is hindind the character, need to fix it
