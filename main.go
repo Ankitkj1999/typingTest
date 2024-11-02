@@ -33,7 +33,7 @@ func generateText() string {
 	return strings.Join(result, " ")
 }
 
-func drawText(targetText, typedText string) {
+func drawText(targetText, typedText string, showCursor bool) {
 	termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
 	x, y := 2, 2
 
@@ -54,17 +54,16 @@ func drawText(targetText, typedText string) {
 			} else {
 				color = termbox.ColorRed
 			}
+		} else if i == len(typedText) {
+			// Current character to type
+			if showCursor {
+				color = termbox.ColorWhite
+			} else {
+				color = termbox.ColorWhite | termbox.AttrDim
+			}
 		}
 
 		termbox.SetCell(x+i, y, char, color, bgColor)
-	}
-
-	// Draw cursor
-	if len(typedText) < len(targetText) {
-		cursorChar := '│'
-		if len(typedText) < len(targetText) {
-			termbox.SetCell(x+len(typedText), y, cursorChar, termbox.ColorWhite, termbox.ColorDefault)
-		}
 	}
 
 	termbox.Flush()
@@ -100,16 +99,36 @@ func main() {
 		typedText:  "",
 	}
 
-	drawText(stats.targetText, stats.typedText)
+	// Create a ticker for cursor blinking
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	showCursor := true
+	drawText(stats.targetText, stats.typedText, showCursor)
 
 	stats.startTime = time.Now()
 	stats.totalChars = 0
 	stats.correctChars = 0
 
+	// Channel for handling keyboard events
+	eventQueue := make(chan termbox.Event)
+	go func() {
+		for {
+			eventQueue <- termbox.PollEvent()
+		}
+	}()
+
 mainloop:
 	for {
-		switch ev := termbox.PollEvent(); ev.Type {
-		case termbox.EventKey:
+		select {
+		case ev := <-eventQueue:
+			if ev.Type == termbox.EventError {
+				panic(ev.Err)
+			}
+			if ev.Type != termbox.EventKey {
+				continue
+			}
+
 			if ev.Key == termbox.KeyEsc {
 				break mainloop
 			}
@@ -128,7 +147,6 @@ mainloop:
 					}
 				}
 			} else {
-				// Handle both regular characters and space
 				var charToAdd string
 				if ev.Key == termbox.KeySpace {
 					charToAdd = " "
@@ -140,21 +158,21 @@ mainloop:
 					stats.typedText += charToAdd
 					stats.totalChars++
 					
-					// Check if the character matches the target
 					if string(stats.targetText[len(stats.typedText)-1]) == charToAdd {
 						stats.correctChars++
 					}
 				}
 			}
 
-			drawText(stats.targetText, stats.typedText)
+			drawText(stats.targetText, stats.typedText, showCursor)
 
 			if len(stats.typedText) >= len(stats.targetText) {
 				break mainloop
 			}
 
-		case termbox.EventError:
-			panic(ev.Err)
+		case <-ticker.C:
+			showCursor = !showCursor
+			drawText(stats.targetText, stats.typedText, showCursor)
 		}
 	}
 
@@ -167,3 +185,4 @@ mainloop:
 	fmt.Printf("CPM: %.2f\n", cpm)
 	fmt.Printf("Accuracy: %.2f%%\n", accuracy)
 }
+//  TODO: The cursor is hindind the character, need to fix it
