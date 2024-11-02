@@ -1,19 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/nsf/termbox-go"
 )
-
-var words = []string{
-	"the", "be", "to", "of", "and", "a", "in", "that", "have", "I",
-	"it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
-	"this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
-}
 
 type Stats struct {
 	startTime    time.Time
@@ -24,10 +21,92 @@ type Stats struct {
 	targetText   string
 }
 
-func generateText() string {
+func loadWordsFromFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var words []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		word := strings.TrimSpace(scanner.Text())
+		if word != "" {
+			words = append(words, word)
+		}
+	}
+	return words, scanner.Err()
+}
+
+func combineWordLists(wordLists ...[]string) []string {
+	totalSize := 0
+	for _, list := range wordLists {
+		totalSize += len(list)
+	}
+
+	combined := make([]string, 0, totalSize)
+	for _, list := range wordLists {
+		combined = append(combined, list...)
+	}
+	return combined
+}
+
+func getWordList() ([]string, error) {
+	fmt.Println("Choose word list:")
+	fmt.Println("1: Short words")
+	fmt.Println("2: Medium words")
+	fmt.Println("3: Long words")
+	fmt.Println("4: All combined")
+
+	var choice int
+	fmt.Print("Enter your choice (1-4): ")
+	fmt.Scan(&choice)
+
+	shortWords, err := loadWordsFromFile(filepath.Join("assets", "short-english.txt"))
+	if err != nil {
+		return nil, fmt.Errorf("error loading short words: %v", err)
+	}
+
+	mediumWords, err := loadWordsFromFile(filepath.Join("assets", "medium-english.txt"))
+	if err != nil {
+		return nil, fmt.Errorf("error loading medium words: %v", err)
+	}
+
+	longWords, err := loadWordsFromFile(filepath.Join("assets", "long-english.txt"))
+	if err != nil {
+		return nil, fmt.Errorf("error loading long words: %v", err)
+	}
+
+	switch choice {
+	case 1:
+		return shortWords, nil
+	case 2:
+		return mediumWords, nil
+	case 3:
+		return longWords, nil
+	case 4:
+		return combineWordLists(shortWords, mediumWords, longWords), nil
+	default:
+		return nil, fmt.Errorf("invalid choice: %d", choice)
+	}
+}
+
+func getWordCount() (int, error) {
+	fmt.Print("Enter number of words to type (5-50): ")
+	var count int
+	fmt.Scan(&count)
+	
+	if count < 5 || count > 50 {
+		return 0, fmt.Errorf("word count must be between 5 and 50")
+	}
+	return count, nil
+}
+
+func generateText(words []string, wordCount int) string {
 	rand.Seed(time.Now().UnixNano())
 	var result []string
-	for i := 0; i < 15; i++ {
+	for i := 0; i < wordCount; i++ {
 		result = append(result, words[rand.Intn(len(words))])
 	}
 	return strings.Join(result, " ")
@@ -95,16 +174,34 @@ func drawText(stats Stats, showCursor bool) {
 
 	termbox.Flush()
 }
-
 func main() {
-	err := termbox.Init()
+	// Get word list choice from user
+	words, err := getWordList()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get word count from user
+	wordCount, err := getWordCount()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Clear the screen before starting the game
+	fmt.Print("\033[H\033[2J")
+	fmt.Println("Starting typing test... Press any key to begin!")
+	fmt.Scanln() // Wait for user input
+
+	err = termbox.Init()
 	if err != nil {
 		panic(err)
 	}
 	defer termbox.Close()
 
 	stats := Stats{
-		targetText: generateText(),
+		targetText: generateText(words, wordCount),
 		typedText:  "",
 		startTime:  time.Now(),
 	}
