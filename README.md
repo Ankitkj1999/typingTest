@@ -1,6 +1,9 @@
 # Typing Test | Go CLI
 
+## Demo
 ![go typing CLI](images/demo.gif)
+## Release v1.0.0
+![go typing CLI](images/release-v1.0.0.gif)
 
 ## Words Per Minute (WPM)
 ```go
@@ -77,10 +80,28 @@ The word lists are divided into four files based on word length:
 - `words_list.txt`: Contains a comprehensive list of English words
 
 ### Run command
-``` sh
+```sh
 go run main.go
 ```
 ### Build command
 ```sh
 go build -o typing-test main.go
+```
+
+# For macOS (both Intel and Apple Silicon)
+```sh
+GOOS=darwin GOARCH=amd64 go build -o typing-test-macos-amd64 main.go
+GOOS=darwin GOARCH=arm64 go build -o typing-test-macos-arm64 main.go
+```
+
+# For Windows
+```sh
+GOOS=windows GOARCH=amd64 go build -o typing-test-windows-amd64.exe main.go
+GOOS=windows GOARCH=386 go build -o typing-test-windows-386.exe main.go
+```
+
+# For Linux
+```sh
+GOOS=linux GOARCH=amd64 go build -o typing-test-linux-amd64 main.go
+GOOS=linux GOARCH=386 go build -o typing-test-linux-386 main.go
 ```
