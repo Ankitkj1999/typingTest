@@ -2,19 +2,22 @@ package main
 
 import (
 	"bufio"
+	"embed"
 	"fmt"
 	"math/rand"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
-	// syscall
+
 	"syscall"
 
 	"github.com/nsf/termbox-go"
 )
+
+//go:embed assets/*.txt
+var assetFiles embed.FS
 
 type Stats struct {
 	startTime    time.Time
@@ -24,8 +27,9 @@ type Stats struct {
 	typedText    string
 	targetText   string
 	isInfinite   bool
-	words        []string  // Store word list for infinite mode
+	words        []string // Store word list for infinite mode
 }
+
 // Added structure to handle wrapped text display
 type WrappedText struct {
 	lines    []string
@@ -105,14 +109,13 @@ func wrapText(text string, maxWidth int) WrappedText {
 }
 
 func loadWordsFromFile(filename string) ([]string, error) {
-	file, err := os.Open(filename)
+	content, err := assetFiles.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
 	var words []string
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
 	for scanner.Scan() {
 		word := strings.TrimSpace(scanner.Text())
 		if word != "" {
@@ -146,17 +149,17 @@ func getWordList() ([]string, error) {
 	fmt.Print("Enter your choice (1-4): ")
 	fmt.Scan(&choice)
 
-	shortWords, err := loadWordsFromFile(filepath.Join("assets", "short-english.txt"))
+	shortWords, err := loadWordsFromFile("assets/short-english.txt")
 	if err != nil {
 		return nil, fmt.Errorf("error loading short words: %v", err)
 	}
 
-	mediumWords, err := loadWordsFromFile(filepath.Join("assets", "medium-english.txt"))
+	mediumWords, err := loadWordsFromFile("assets/medium-english.txt")
 	if err != nil {
 		return nil, fmt.Errorf("error loading medium words: %v", err)
 	}
 
-	longWords, err := loadWordsFromFile(filepath.Join("assets", "long-english.txt"))
+	longWords, err := loadWordsFromFile("assets/long-english.txt")
 	if err != nil {
 		return nil, fmt.Errorf("error loading long words: %v", err)
 	}
@@ -179,7 +182,7 @@ func getWordCount() (int, bool, error) {
 	fmt.Println("\nSelect mode:")
 	fmt.Println("1: Fixed number of words")
 	fmt.Println("2: Infinite mode (type until you exit)")
-	
+
 	var choice int
 	fmt.Print("Enter your choice (1-2): ")
 	fmt.Scan(&choice)
@@ -214,7 +217,7 @@ func (s *Stats) extendText() {
 	for i := 0; i < 50; i++ { // Add 50 more words
 		newWords = append(newWords, s.words[rand.Intn(len(s.words))])
 	}
-	
+
 	if s.targetText != "" {
 		s.targetText += " " // Add space between old and new text
 	}
@@ -318,147 +321,6 @@ func drawText(stats Stats, showCursor bool) {
 	termbox.Flush()
 }
 
-// func main() {
-// 	// Get word list choice from user
-// 	words, err := getWordList()
-// 	if err != nil {
-// 		fmt.Printf("Error: %v\n", err)
-// 		os.Exit(1)
-// 	}
-
-// 	// Get word count and mode from user
-// 	wordCount, isInfinite, err := getWordCount()
-// 	if err != nil {
-// 		fmt.Printf("Error: %v\n", err)
-// 		os.Exit(1)
-// 	}
-
-// 	// Clear the screen before starting the game
-// 	fmt.Print("\033[H\033[2J")
-// 	if isInfinite {
-// 		fmt.Println("Starting infinite typing test... Press Enter to begin!")
-// 	} else {
-// 		fmt.Println("Starting typing test... Press Enter to begin!")
-// 	}
-// 	fmt.Println("Press ESC or Ctrl+C to exit")
-// 	fmt.Scanln()// Wait for user to press Enter
-
-// 	err = termbox.Init()
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	defer termbox.Close()
-
-// 	stats := Stats{
-// 		targetText: generateText(words, wordCount),
-// 		typedText:  "",
-// 		startTime:  time.Now(),
-// 	}
-
-// 	// Create a ticker for cursor blinking
-// 	ticker := time.NewTicker(500 * time.Millisecond)
-// 	defer ticker.Stop()
-
-// 	// Create a ticker for stats updates
-// 	statsTicker := time.NewTicker(100 * time.Millisecond)
-// 	defer statsTicker.Stop()
-
-// 	showCursor := true
-// 	drawText(stats, showCursor)
-
-// 	// Setup signal handling for Ctrl+C
-// 	sigChan := make(chan os.Signal, 1)
-// 	signal.Notify(sigChan, os.Interrupt)
-
-// 	// Channel for handling keyboard events
-// 	eventQueue := make(chan termbox.Event)
-// 	go func() {
-// 		for {
-// 			eventQueue <- termbox.PollEvent()
-// 		}
-// 	}()
-
-// mainloop:
-// 	for {
-// 		select {
-// 		case <-sigChan:
-// 			// Handle Ctrl+C
-// 			break mainloop
-
-// 		case ev := <-eventQueue:
-// 			if ev.Type == termbox.EventError {
-// 				panic(ev.Err)
-// 			}
-// 			if ev.Type == termbox.EventResize {
-// 				drawText(stats, showCursor)
-// 				continue
-// 			}
-// 			if ev.Type != termbox.EventKey {
-// 				continue
-// 			}
-
-// 			if ev.Key == termbox.KeyEsc {
-// 				break mainloop
-// 			}
-
-// 			if ev.Key == termbox.KeyEnter && len(stats.typedText) >= len(stats.targetText) {
-// 				break mainloop
-// 			}
-
-// 			if ev.Key == termbox.KeyBackspace || ev.Key == termbox.KeyBackspace2 {
-// 				if len(stats.typedText) > 0 {
-// 					stats.typedText = stats.typedText[:len(stats.typedText)-1]
-// 					stats.totalChars--
-// 					if len(stats.typedText) < len(stats.targetText) &&
-// 						string(stats.typedText[len(stats.typedText)-1]) == string(stats.targetText[len(stats.typedText)-1]) {
-// 						stats.correctChars--
-// 					}
-// 				}
-// 			} else {
-// 				var charToAdd string
-// 				if ev.Key == termbox.KeySpace {
-// 					charToAdd = " "
-// 				} else if ev.Ch != 0 {
-// 					charToAdd = string(ev.Ch)
-// 				}
-
-// 				if charToAdd != "" && len(stats.typedText) < len(stats.targetText) {
-// 					stats.typedText += charToAdd
-// 					stats.totalChars++
-
-// 					if string(stats.targetText[len(stats.typedText)-1]) == charToAdd {
-// 						stats.correctChars++
-// 					}
-// 				}
-// 			}
-
-// 			drawText(stats, showCursor)
-
-// 			if len(stats.typedText) >= len(stats.targetText) {
-// 				break mainloop
-// 			}
-
-// 		case <-ticker.C:
-// 			showCursor = !showCursor
-// 			drawText(stats, showCursor)
-
-// 		case <-statsTicker.C:
-// 			drawText(stats, showCursor)
-// 		}
-// 	}
-
-// 	stats.endTime = time.Now()
-// 	wpm, cpm, accuracy := calculateLiveStats(stats)
-
-// 	termbox.Close()
-// 	completed := float64(len(stats.typedText)) / float64(len(stats.targetText)) * 100
-// 	fmt.Printf("\nTyping Test Results (%.1f%% completed):\n", completed)
-// 	fmt.Printf("WPM: %.1f\n", wpm)
-// 	fmt.Printf("CPM: %.1f\n", cpm)
-// 	fmt.Printf("Accuracy: %.1f%%\n", accuracy)
-// }
-
-
 func main() {
 	// Get word list choice from user
 	words, err := getWordList()
@@ -491,11 +353,11 @@ func main() {
 	defer termbox.Close()
 
 	stats := Stats{
-		targetText:  generateText(words, wordCount),
-		typedText:   "",
-		startTime:   time.Now(),
-		isInfinite:  isInfinite,
-		words:       words,
+		targetText: generateText(words, wordCount),
+		typedText:  "",
+		startTime:  time.Now(),
+		isInfinite: isInfinite,
+		words:      words,
 	}
 
 	// Create a ticker for cursor blinking
@@ -563,7 +425,7 @@ mainloop:
 				if charToAdd != "" && len(stats.typedText) < len(stats.targetText) {
 					stats.typedText += charToAdd
 					stats.totalChars++
-					
+
 					if string(stats.targetText[len(stats.typedText)-1]) == charToAdd {
 						stats.correctChars++
 					}
@@ -586,7 +448,7 @@ mainloop:
 		case <-ticker.C:
 			showCursor = !showCursor
 			drawText(stats, showCursor)
-			
+
 		case <-statsTicker.C:
 			drawText(stats, showCursor)
 		}
@@ -596,7 +458,7 @@ mainloop:
 	wpm, cpm, accuracy := calculateLiveStats(stats)
 
 	termbox.Close()
-	
+
 	// Show results
 	if stats.isInfinite {
 		fmt.Printf("\nInfinite Mode Results:\n")
@@ -612,3 +474,4 @@ mainloop:
 
 // TODO: Add an toption to restart the test
 
+// TODO: Fix the exit issue when pressing ESC or Ctrl+C
