@@ -75,3 +75,12 @@ The word lists are divided into four files based on word length:
 - `medium-english.txt`: Contains medium-length English words
 - `long-english.txt`: Contains long English words
 - `words_list.txt`: Contains a comprehensive list of English words
+
+### Run command
+``` sh
+go run main.go
+```
+### Build command
+```sh
+go build -o typing-test main.go
+```
